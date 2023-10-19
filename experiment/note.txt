@@ -1,0 +1,54 @@
+touched:
+	include/asm-generic/pgalloc.h
+		__pte_alloc_one_kernel
+		__pte_alloc_one
+		pmd_alloc_one
+		__pud_alloc_one
+
+	arch/x86/mm/pgtable.c
+		preallocate_pmds
+
+	arch/x86/include/asm/pgalloc.h
+		p4d_alloc_one
+
+untouched:
+	arch/x86/mm/pgtable.c
+		pgd_alloc
+		pte_alloc_one
+
+	arch/x86/mm/pti.c
+		pti_user_pagetable_walk_{p4d,pmd,pte}
+
+	arch/x86/mm/init_64.c
+	arch/x86/mm/init.c
+	arch/x86/mm/tlb.c
+	arch/x86/mm/fault.c
+
+hint:
+	GFP_PGTABLE
+
+problems of hivemind task alloc:
+	1. may contend, need to find a way to lock group (may move pool lock to group lock), due to how mm_struct->owner works
+	2. when task is destroyed, need to release unused group cache page, or may memleak
+
+	leftovers:
+		init/init_task.c, init_task
+			HVM_GROUP_INIT
+
+		kernel/fork.c, copy_process
+			HVM_GROUP_INIT
+
+		include/linux/hivemind.h
+			HVM_PAGE_GROUP_ORDER 0 (should be 3)
+			functions accept {mm,task}_struct
+
+		arch/x86/mm/hivemind.c
+			functions accept {mm,task}_struct
+
+problems:
+	alloc_pages(..., HPAGE_ORDER);
+	for (i = 0; i < 512; i++) {
+		__free_page(new + i);
+	}
+	will cause problem (the page not freed)
+	need to find a workaround, or investegate root cause

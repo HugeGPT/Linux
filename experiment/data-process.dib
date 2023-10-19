@@ -1,0 +1,140 @@
+#!csharp
+
+#r "nuget: Newtonsoft.Json"
+#r "nuget: Plotly.NET"
+#r "nuget: Plotly.NET.Interactive"
+using Microsoft.FSharp.Core;
+using Newtonsoft.Json;
+using Plotly.NET;
+using Plotly.NET.LayoutObjects;
+using Plotly.NET.TraceObjects;
+using System.IO;
+using System.Text.RegularExpressions;
+
+var path = @"Hivemind/motivation/microbench/results";
+var outFile = @"Hivemind/motivation/microbench/parsed.json";
+var files = Directory.GetFiles(path);
+
+#!csharp
+
+record Result {
+    public int[] PageWalkLat;
+    public long DTLBMiss;
+    public long ITLBMiss;
+    public double Duration;
+
+    public string Path;
+    public bool IsHugePageTable;
+    public bool IsHugeUserPage;
+    public bool IsRandomAccess;
+    public bool IsReadMeasured;
+    public bool IsWriteMeasured;
+}
+
+#!csharp
+
+var nameParse = new Regex(@"^run-allbase-(.*)-(.*)-(.*)-(.*)-(.*)$");
+var latParse = new Regex(@"Reported (\d+) cycle");
+var dtlbParse = new Regex(@"([\d,]+)\s+dTLB-load-misses");
+var itlbParse = new Regex(@"([\d,]+)\s+iTLB-load-misses");
+var durParse = new Regex(@"([\d\.]+)\s+seconds time elapsed");
+
+static string Get(this Match match, int index) {
+    return match.Groups[index].Value;
+}
+
+#!csharp
+
+var results = new List<Result>();
+
+foreach(var file in files) {
+    var name = Path.GetFileNameWithoutExtension(file);
+    var match = nameParse.Match(name);
+
+    if (!match.Success)
+        continue;
+
+    var result = new Result {
+        PageWalkLat = new int[3],
+
+        Path = file,
+
+        IsHugePageTable = match.Get(1) == "hptp",
+        IsHugeUserPage = match.Get(2) == "husp",
+        IsRandomAccess = match.Get(3) == "rand",
+        IsReadMeasured = match.Get(4) == "rd" || match.Get(4) == "rw",
+        IsWriteMeasured = match.Get(4) == "wr" || match.Get(4) == "rw",
+    };
+
+    var content = File.ReadAllText(file);
+    var lats = latParse.Matches(content);
+    for (var i = 3; i < 6; i++) {
+        var lat = int.Parse(lats[i].Get(1));
+        result.PageWalkLat[i - 3] = lat;
+    }
+
+    /*
+    var dtlb = dtlbParse.Match(content);
+    var itlb = itlbParse.Match(content);
+    var dur = durParse.Match(content);
+
+    result.DTLBMiss = long.Parse(dtlb.Get(1).Replace(",", ""));
+    result.ITLBMiss = long.Parse(itlb.Get(1).Replace(",", ""));
+    result.Duration = double.Parse(dur.Get(1));
+    */
+
+    results.Add(result);
+}
+
+#!csharp
+
+return; // disable this block
+
+var json = JsonConvert.SerializeObject(results, Formatting.Indented);
+File.WriteAllText(outFile, json);
+
+#!csharp
+
+static double Median(this IEnumerable<double> sourceNumbers) {
+    //Framework 2.0 version of this method. there is an easier way in F4        
+    if (sourceNumbers == null || sourceNumbers.Count() == 0)
+        throw new System.Exception("Median of empty array not defined.");
+
+    //make sure the list is sorted, but use a new array
+    double[] sortedPNumbers = sourceNumbers.ToArray();
+    Array.Sort(sortedPNumbers);
+
+    //get the median
+    int size = sortedPNumbers.Length;
+    int mid = size / 2;
+    double median = (size % 2 != 0) ? (double)sortedPNumbers[mid] : ((double)sortedPNumbers[mid] + (double)sortedPNumbers[mid - 1]) / 2;
+    return median;
+}
+
+#!csharp
+
+var imm = results.Where(x => x.IsReadMeasured && !x.IsWriteMeasured && !x.IsRandomAccess && x.PageWalkLat.Average() < 150);
+var Hpt = imm.Where(x => x.IsHugePageTable).Select(x => x.PageWalkLat.Average()).Average();
+var Bpt = imm.Where(x => !x.IsHugePageTable).Select(x => x.PageWalkLat.Average()).Average();
+
+Console.WriteLine("Hpt\t\t\tBpt\t\t\tDelta");
+Console.WriteLine($"{Hpt}\t{Bpt}\t{(Bpt - Hpt) / Hpt * 100}");
+
+#!csharp
+
+var x = new List<string>();
+//var y = new List<string>();
+var z = new List<double>();
+
+foreach (var r in results) {
+    x.Add((r.IsReadMeasured ? "R" : "") + (r.IsWriteMeasured ? "W" : "") + (r.IsHugePageTable ? "HugePageTable" : "BasePageTable"));
+    //y.Add();
+    z.Add(r.PageWalkLat.Average());
+}
+
+var marker = new Marker();
+marker.SetValue<int>("size", 3);
+
+Chart2D.Chart.Point<string, double, double>(x: x, y: z, MultiText: z)
+.WithMarker(marker)
+.Show();

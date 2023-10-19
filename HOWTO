@@ -1,0 +1,106 @@
+1 No special operation required on host side
+2 Enter guest machine, goto /usr/src/hivemind/experiment
+3 Run ./demote_setting, follow on-screen instruction
+4 Once the system is configured, you can do experiments as normal
+5 Reboot GUEST after each experiment session to reset machine environment, THIS IS REQUIRED (No need to reboot host)
+  Reboot GUEST before applying another demote setting. The settings have side effects that requires a reboot to remove.
+
+ 
+
+ 
+
+6 To use perf to stat EPT page walk cycle, run in GUEST:
+/usr/src/hivemind/tools/perf/perf stat -e dtlb_load_misses.walk_completed,dtlb_load_misses.walk_pending,dtlb_store_misses.walk_completed,dtlb_store_misses.walk_pending,itlb_misses.walk_completed,itlb_misses.walk_pending,ept.walk_pending <command here>
+
+ 
+
+Do NOT use perf command without path (it will say perf is not installed)
+
+Do NOT run in host (inaccurate result + not installed)
+
+You may add/change perf arguments at will, just keep the above mentioned stat items, especially the ept.walk_pending one.
+
+ 
+
+ 
+
+7 To run hpcc, in GUEST:
+cd ~/hivemind-benchmarks/hpcc
+
+./hpcc.sh
+
+Results will be sent to stdout
+
+You may tweak the script to include perf
+
+ 
+
+8 To run sysbench. in GUEST:
+cd ~/hivemind-benchmarks/sysbench
+
+./sysbench.sh
+
+Results will be sent to stdout
+
+You may tweak the script to include perf
+
+ 
+
+9 To run microbench, in GUEST:
+cd /usr/src/hivemind/experiment
+
+gcc <options> pagewalk_lat.c
+
+<perf command sequence> ./a.out
+
+ 
+
+Options:
+
+-DRUN_SEQ        Run sequential access
+
+-DRUN_RAND        Run random access
+
+^ Specify at lease one
+
+ 
+
+-DMEASURE_READ        Test read latency
+
+-DMEASURE_WRITE        Test write latency
+
+^ Specify at least one
+
+^ If used together, then measure roundtrip performance
+
+ 
+
+-DENABLE_EARLY_PURGE        Clear TLB only once, before experiment start
+
+-DENABLE_LATE_PURGE        Clear TLB before each page probe
+
+^ Specify at will
+
+Results will be sent to stdout
+
+ 
+
+ 
+
+10 To analysis data:
+Analysis end-to-end performance as usual (through benchmark output)
+
+Analysis avg pagewalk cycle: ept.walk_pending / tlbmisses (calculated by pick/sum <miss_type>.walk_completed based on knowledge of workload)
+
+It is normal that ept.walk_pending is not the same as sum(<miss_type>.walk_pending), we use the EPT one, but keep the others in case we need to analysis them later.
+
+
+11 To run evaluation
+
+cd /usr/src/hivemind/experiment
+
+./guest_evaluation.sh <session_name_here>
+
+ 
+
+Current configured to run redis & memcached for 3 time
